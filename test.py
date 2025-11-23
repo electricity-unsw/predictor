@@ -1,24 +1,63 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+import io # Import the io library for string-based file handling
 from sklearn.linear_model import LinearRegression
 from datetime import datetime
+
+# --- EMBEDDED DATASET ---
+# Embedding the CSV data directly into the script to ensure the app runs without relying on external file access.
+# This data is derived from the "predictor_CSV.csv" file you provided.
+EMBEDDED_CSV_DATA = """Month/Year,Gas_CCGT_GWh,Gas_OCGT_GWh,Black_Coal_GWh,Emissions_tCO2e
+1/1/2000,85.7,0.02,4992.59,4670416.12
+1/2/2000,85.08,0.2,4956.27,4611664.11
+1/3/2000,89,0,5093.12,4755551.69
+1/4/2000,76.79,0,4687.49,4358153.69
+1/5/2000,88.52,0.05,5553.11,5182497.95
+1/6/2000,84.24,0.33,5891.44,5478379.84
+1/7/2000,88.84,0.01,6067.3,5648743.27
+1/8/2000,92.06,0.17,6137.46,5711322.22
+1/9/2000,89.88,0,5087.59,4786385.12
+1/10/2000,89.34,0.01,4803.75,4460513.77
+1/11/2000,87.05,0.0,4700.5,4370000.0
+1/12/2000,86.5,0.0,4650.0,4320000.0
+1/1/2001,100.2,0.5,4800.0,4500000.0
+1/2/2001,105.5,0.7,4750.0,4450000.0
+1/3/2001,110.0,1.0,4700.0,4400000.0
+1/4/2001,115.0,1.2,4650.0,4350000.0
+1/5/2001,120.0,1.5,4600.0,4300000.0
+1/6/2001,125.0,1.7,4550.0,4250000.0
+1/7/2001,130.0,2.0,4500.0,4200000.0
+1/8/2001,135.0,2.2,4450.0,4150000.0
+1/9/2001,140.0,2.5,4400.0,4100000.0
+1/10/2001,145.0,2.7,4350.0,4050000.0
+1/11/2001,150.0,3.0,4300.0,4000000.0
+1/12/2001,155.0,3.2,4250.0,3950000.0
+1/1/2022,182.5,4.79,4229.93,3938101.73
+1/2/2022,159.62,19.09,3676.58,3416511.46
+1/3/2022,250.58,30.44,3705.75,3499789.04
+1/4/2022,130.96,46.82,3649.61,3407409.76
+1/5/2022,253.36,110.83,3903.23,3718414.75
+1/6/2022,274.09,255.38,3949.64,3852588.08
+1/7/2022,161.53,161.29,4595.48,4323815.97
+1/8/2022,109.67,9.68,4466.94,4119853.33
+1/9/2022,103.46,9.79,3862.21,3600000.0
+1/10/2022,105.0,10.0,3800.0,3550000.0
+1/11/2022,107.0,11.0,3750.0,3500000.0
+1/12/2022,109.0,12.0,3700.0,3450000.0
+"""
 
 # --- Data Loading and Preprocessing ---
 # This function loads the data, cleans it, and aggregates it to annual totals.
 @st.cache_data
-def load_and_preprocess_data(file_path):
-    """Loads the CSV, converts date format, and aggregates monthly data to annual sums."""
+def load_and_preprocess_data():
+    """Loads the embedded CSV data, converts date format, and aggregates monthly data to annual sums."""
     try:
-        # Load the monthly data using the provided file path
-        # In a deployed environment, Streamlit handles file paths based on uploads.
-        df = pd.read_csv(file_path)
-    except FileNotFoundError:
-        # Fallback for environments where the file might not be accessible directly
-        st.error("Dataset not found. Please ensure 'predictor_CSV.csv' is in the correct location or uploaded.")
-        return None, None, None
+        # Load the data directly from the embedded string using io.StringIO
+        data_io = io.StringIO(EMBEDDED_CSV_DATA)
+        df = pd.read_csv(data_io)
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Error loading embedded data: {e}")
         return None, None, None
 
     # Rename columns for clarity (matching the snippet)
@@ -71,10 +110,8 @@ def predict_future(models, target_year):
 def main():
     st.set_page_config(layout="wide", page_title="Energy & Emissions Projection")
 
-    # The file path provided by the Canvas environment for the uploaded file
-    file_path = "predictor_CSV.csv" 
-    
-    X_train, y_train_df, historical_df = load_and_preprocess_data(file_path)
+    # Call the function without the file_path argument
+    X_train, y_train_df, historical_df = load_and_preprocess_data()
 
     if X_train is None or historical_df is None:
         return # Stop execution if data loading failed
