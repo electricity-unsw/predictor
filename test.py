@@ -88,8 +88,7 @@ if df is not None:
     st.sidebar.markdown("---")
     st.sidebar.info(
         "**Note on Logic:**\n\n"
-        "1. **Date vs Gen:** Uses Python Linear Regression on historical data.\n"
-        "2. **Gen vs Emission:** Uses your specified Excel formulas."
+        "**Date vs Gen:** Uses Python Linear Regression on historical data."
     )
 
     # --- Regression Logic ---
