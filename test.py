@@ -41,86 +41,102 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- Data Loading ---
+# --- Data Loading Logic ---
 @st.cache_data
-def load_data():
-    # Attempt to load the file - checks for standard name or specific upload name
-    try:
-        # Priority: Look for the clean filename
-        df = pd.read_csv("predictor_csv.csv")
-    except FileNotFoundError:
+def load_local_data():
+    """Attempts to load data from standard local paths."""
+    possible_files = [
+        "predictor_csv.csv", 
+        "predictor_csv.xlsx - Sheet1.csv",
+        "predictor_csv.xlsx - Sheet1 (1).csv"
+    ]
+    
+    for file_path in possible_files:
         try:
-            # Fallback: Look for the original upload name
-            df = pd.read_csv("predictor_csv.xlsx - Sheet1.csv")
-        except:
-            st.error("Data file not found. Please ensure 'predictor_csv.csv' is in the directory.")
-            return None
+            df = pd.read_csv(file_path)
+            return df
+        except FileNotFoundError:
+            continue
+    return None
 
-    # Clean and Parse Dates
-    df['date'] = pd.to_datetime(df['date'])
-    
-    # Create a numeric representation of date for Regression (Ordinal)
-    df['date_ordinal'] = df['date'].apply(lambda x: x.toordinal())
-    
-    return df
+def process_dataframe(df):
+    """Cleans and prepares the dataframe for analysis."""
+    try:
+        df['date'] = pd.to_datetime(df['date'])
+        df['date_ordinal'] = df['date'].apply(lambda x: x.toordinal())
+        return df
+    except Exception as e:
+        st.error(f"Error processing data: {str(e)}")
+        return None
 
-df = load_data()
+# --- Main Initialization ---
+
+st.sidebar.header("Data Source")
+uploaded_file = st.sidebar.file_uploader("Upload CSV File (Optional)", type=['csv'])
+
+raw_df = None
+if uploaded_file is not None:
+    try:
+        raw_df = pd.read_csv(uploaded_file)
+    except Exception as e:
+        st.error(f"Error reading uploaded file: {e}")
+else:
+    raw_df = load_local_data()
+
+if raw_df is None:
+    st.warning("⚠️ Data file not found automatically.")
+    st.info("Please drag and drop your **predictor_csv.csv** file into the sidebar uploader to continue.")
+    st.stop()
+
+df = process_dataframe(raw_df)
 
 if df is not None:
     # --- Sidebar Controls ---
     st.sidebar.header("Prediction Controls")
-    
-    # Slider for Year Selection (2025 - 2070)
     target_year = st.sidebar.slider("Select Target Year", 2025, 2070, 2030)
-    
-    # Option to toggle between User Equations and Dynamic fit for Generation
-    # We use Dynamic for Dates by default because Excel date serials differ from Python ordinals
     
     st.sidebar.markdown("---")
     st.sidebar.info(
         "**Note on Logic:**\n\n"
-        "1. **Date vs Gen:** Uses Python Linear Regression on historical data (to ensure correct time-axis alignment).\n"
-        "2. **Gen vs Emission:** Uses the specific Excel formulas provided in your prompt."
+        "1. **Date vs Gen:** Uses Python Linear Regression on historical data.\n"
+        "2. **Gen vs Emission:** Uses your specified Excel formulas."
     )
 
     # --- Regression Logic ---
-
-    # 1. Train Models: Date (Independent) -> Generation (Dependent)
-    # We need to train these to get the slope/intercept for the Time axis
-    
-    models_gen = {}
-    
-    # Define the mapping of column names
     targets = {
         'Coal': {
             'gen_col': 'Coal (Black) -  GWh',
             'em_col': 'Coal (Black) Emissions Vol - tCO₂e',
-            'color': '#ff4b4b' # Red
+            'color': '#ff4b4b'
         },
         'Gas CCGT': {
             'gen_col': 'Gas (CCGT) -  GWh',
             'em_col': 'Gas (CCGT) Emissions Vol - tCO₂e',
-            'color': '#ffa500' # Orange
+            'color': '#ffa500'
         },
         'Gas OCGT': {
             'gen_col': 'Gas (OCGT) -  GWh',
             'em_col': 'Gas (OCGT) Emissions Vol - tCO₂e',
-            'color': '#00c0f2' # Blue
+            'color': '#00c0f2'
         }
     }
 
-    # Train Generation Models
+    # Train Models: Date (Independent) -> Generation (Dependent)
+    models_gen = {}
     X = df[['date_ordinal']]
     
     for key, val in targets.items():
-        y = df[val['gen_col']]
-        model = LinearRegression()
-        model.fit(X, y)
-        models_gen[key] = model
+        if val['gen_col'] in df.columns:
+            y = df[val['gen_col']]
+            model = LinearRegression()
+            model.fit(X, y)
+            models_gen[key] = model
+        else:
+            st.error(f"Column '{val['gen_col']}' not found in dataset.")
+            st.stop()
 
     # --- Prediction Function ---
     def predict_values(year):
-        # Create a date object for the middle of the requested year
         target_date = datetime.date(year, 6, 1) 
         target_ordinal = target_date.toordinal()
         
@@ -129,14 +145,9 @@ if df is not None:
         total_gen = 0
         
         for key, val in targets.items():
-            # 1. Predict Generation based on Year (Using Python Model)
             gen_pred = models_gen[key].predict([[target_ordinal]])[0]
             
-            # 2. Predict Emissions based on Generation (Using USER PROVIDED EQUATIONS)
-            # Coal: y = 958.45x - 185539
-            # CCGT: y = 413.21x + 14159
-            # OCGT: y = 582.73x - 114.71
-            
+            # User Provided Equations
             if key == 'Coal':
                 em_pred = (958.45 * gen_pred) - 185539
             elif key == 'Gas CCGT':
@@ -144,7 +155,6 @@ if df is not None:
             elif key == 'Gas OCGT':
                 em_pred = (582.73 * gen_pred) - 114.71
             
-            # Handle negative predictions (physically impossible) by clamping to 0
             if gen_pred < 0: gen_pred = 0
             if em_pred < 0: em_pred = 0
             
@@ -158,15 +168,12 @@ if df is not None:
             
         return predictions, total_gen, total_emissions
 
-    # Calculate for current selection
     preds, tot_gen, tot_em = predict_values(target_year)
 
     # --- Dashboard Layout ---
-    
     st.title("Energy Forecast Dashboard")
     st.markdown(f"### Projections for Year: **{target_year}**")
 
-    # Top Level Metrics
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f"""
@@ -185,9 +192,7 @@ if df is not None:
 
     st.markdown("### Breakdown by Source")
     
-    # Detailed Columns
     c1, c2, c3 = st.columns(3)
-    
     sources = ['Coal', 'Gas CCGT', 'Gas OCGT']
     cols = [c1, c2, c3]
     
@@ -202,7 +207,6 @@ if df is not None:
     # --- Tabs for Analysis ---
     tab1, tab2, tab3 = st.tabs(["📉 Generation Trends", "☁️ Emission Trends", "📊 Linear Regression Validation"])
 
-    # Prepare Future Data for plotting (Line from last data point to 2070)
     last_date = df['date'].max()
     future_years = list(range(last_date.year, 2071))
     future_dates = [datetime.date(y, 1, 1) for y in future_years]
@@ -213,7 +217,6 @@ if df is not None:
         fig_gen = go.Figure()
 
         for key, val in targets.items():
-            # Historical Dots
             fig_gen.add_trace(go.Scatter(
                 x=df['date'], 
                 y=df[val['gen_col']], 
@@ -222,8 +225,6 @@ if df is not None:
                 marker=dict(color=val['color'], opacity=0.5, size=3)
             ))
             
-            # Trend Line (Historical + Future)
-            # Create full range ordinals for smooth line
             full_dates_ord = np.concatenate([df['date_ordinal'].values.reshape(-1,1), future_ordinals])
             full_dates_dt = [datetime.date.fromordinal(int(d)) for d in full_dates_ord.flatten()]
             trend_y = models_gen[key].predict(full_dates_ord)
@@ -249,7 +250,6 @@ if df is not None:
         fig_em = go.Figure()
 
         for key, val in targets.items():
-            # Historical Dots
             fig_em.add_trace(go.Scatter(
                 x=df['date'], 
                 y=df[val['em_col']], 
@@ -258,13 +258,10 @@ if df is not None:
                 marker=dict(color=val['color'], opacity=0.5, size=3)
             ))
             
-            # Trend Line
-            # We calculate this by taking the Gen Trend -> Applying User Formulas
             full_dates_ord = np.concatenate([df['date_ordinal'].values.reshape(-1,1), future_ordinals])
             full_dates_dt = [datetime.date.fromordinal(int(d)) for d in full_dates_ord.flatten()]
             gen_trend = models_gen[key].predict(full_dates_ord)
             
-            # Apply User Formulas
             if key == 'Coal':
                 em_trend = (958.45 * gen_trend) - 185539
             elif key == 'Gas CCGT':
@@ -292,28 +289,43 @@ if df is not None:
         st.subheader("Generation vs Emissions Relationship")
         st.caption("Visualizing the linear relationship equations you provided.")
         
-        # Dropdown to select source for scatter plot
         selected_source = st.selectbox("Select Energy Source", list(targets.keys()))
         val = targets[selected_source]
         
+        # Original Data Scatter
         fig_scatter = px.scatter(
             df, 
             x=val['gen_col'], 
             y=val['em_col'], 
-            trendline="ols", # This calculates OLS dynamically, useful to compare with user equations
-            trendline_color_override="white",
             title=f"{selected_source}: Generation vs Emissions"
         )
+        
+        # Manually Add Trend Line based on User Equation
+        x_min, x_max = df[val['gen_col']].min(), df[val['gen_col']].max()
+        x_range = np.linspace(x_min, x_max, 100)
+        
+        equation_str = ""
+        if selected_source == 'Coal':
+            y_trend = 958.45 * x_range - 185539
+            equation_str = "y = 958.45x - 185539"
+        elif selected_source == 'Gas CCGT':
+            y_trend = 413.21 * x_range + 14159
+            equation_str = "y = 413.21x + 14159"
+        elif selected_source == 'Gas OCGT':
+            y_trend = 582.73 * x_range - 114.71
+            equation_str = "y = 582.73x - 114.71"
+            
+        fig_scatter.add_trace(go.Scatter(
+            x=x_range,
+            y=y_trend,
+            mode='lines',
+            name=f'Eq: {equation_str}',
+            line=dict(color='red', width=2)
+        ))
         
         fig_scatter.update_layout(template="plotly_dark")
         st.plotly_chart(fig_scatter, use_container_width=True)
         
-        # Display the equation used
-        st.markdown("#### Equation Used for Calculation:")
-        if selected_source == 'Coal':
-            st.latex(r"y = 958.45x - 185539")
-        elif selected_source == 'Gas CCGT':
-            st.latex(r"y = 413.21x + 14159")
-        elif selected_source == 'Gas OCGT':
-            st.latex(r"y = 582.73x - 114.71")
+        st.markdown("#### Equation Used:")
+        st.latex(equation_str)
         st.caption("Where x = Generation (GWh) and y = Emissions (tCO₂e)")
