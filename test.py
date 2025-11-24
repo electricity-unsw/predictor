@@ -169,14 +169,14 @@ if df is not None:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-label">Total Predicted Generation</div>
-            <div class="metric-value">{tot_gen:,.4g} GWh</div>
+            <div class="metric-value">{tot_gen:,.2f} GWh</div>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-label">Total Predicted Emissions</div>
-            <div class="metric-value">{tot_em:,.4g} tCO₂e</div>
+            <div class="metric-value">{tot_em:,.2f} tCO₂e</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -189,8 +189,8 @@ if df is not None:
     for source, col in zip(sources, cols):
         with col:
             st.markdown(f"#### {source}")
-            st.metric("Generation (GWh)", f"{preds[source]['gen']:,.4g}")
-            st.metric("Emissions (tCO₂e)", f"{preds[source]['em']:,.4g}")
+            st.metric("Generation (GWh)", f"{preds[source]['gen']:,.2f}")
+            st.metric("Emissions (tCO₂e)", f"{preds[source]['em']:,.2f}")
 
     st.divider()
 
@@ -214,7 +214,7 @@ if df is not None:
                 mode='markers',
                 name=f"{key} (Hist)",
                 marker=dict(color=val['color'], opacity=0.5, size=3),
-                hovertemplate=f"<b>{key} (Hist)</b><br>Date: %{{x|%Y-%m-%d}}<br>Gen: %{{y:.4r}} GWh<extra></extra>"
+                hovertemplate=f"<b>{key} (Hist)</b><br>Date: %{{x|%d/%m/%Y}}<br>Gen: %{{y:.4r}} GWh<extra></extra>"
             ))
             
             # Trend Line (Historical + Future)
@@ -254,7 +254,7 @@ if df is not None:
                 mode='markers',
                 name=f"{key} (Hist)",
                 marker=dict(color=val['color'], opacity=0.5, size=3),
-                hovertemplate=f"<b>{key} (Hist)</b><br>Date: %{{x|%Y-%m-%d}}<br>Emissions: %{{y:.4r}} tCO₂e<extra></extra>"
+                hovertemplate=f"<b>{key} (Hist)</b><br>Date: %{{x|%d/%m/%Y}}<br>Emissions: %{{y:.4r}} tCO₂e<extra></extra>"
             ))
             
             # Trend Line
