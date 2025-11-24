@@ -1,256 +1,319 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
-import streamlit as st
-import io # Import the io library for string-based file handling
 from sklearn.linear_model import LinearRegression
-from datetime import datetime
+import plotly.graph_objects as go
+import plotly.express as px
+import datetime
 
-# --- EMBEDDED DATASET ---
-# Embedding the CSV data directly into the script to ensure the app runs without relying on external file access.
-# This data is derived from the "predictor_CSV.csv" file you provided.
-EMBEDDED_CSV_DATA = """Month/Year,Gas_CCGT_GWh,Gas_OCGT_GWh,Black_Coal_GWh,Emissions_tCO2e
-1/1/2000,85.7,0.02,4992.59,4670416.12
-1/2/2000,85.08,0.2,4956.27,4611664.11
-1/3/2000,89,0,5093.12,4755551.69
-1/4/2000,76.79,0,4687.49,4358153.69
-1/5/2000,88.52,0.05,5553.11,5182497.95
-1/6/2000,84.24,0.33,5891.44,5478379.84
-1/7/2000,88.84,0.01,6067.3,5648743.27
-1/8/2000,92.06,0.17,6137.46,5711322.22
-1/9/2000,89.88,0,5087.59,4786385.12
-1/10/2000,89.34,0.01,4803.75,4460513.77
-1/11/2000,87.05,0.0,4700.5,4370000.0
-1/12/2000,86.5,0.0,4650.0,4320000.0
-1/1/2001,100.2,0.5,4800.0,4500000.0
-1/2/2001,105.5,0.7,4750.0,4450000.0
-1/3/2001,110.0,1.0,4700.0,4400000.0
-1/4/2001,115.0,1.2,4650.0,4350000.0
-1/5/2001,120.0,1.5,4600.0,4300000.0
-1/6/2001,125.0,1.7,4550.0,4250000.0
-1/7/2001,130.0,2.0,4500.0,4200000.0
-1/8/2001,135.0,2.2,4450.0,4150000.0
-1/9/2001,140.0,2.5,4400.0,4100000.0
-1/10/2001,145.0,2.7,4350.0,4050000.0
-1/11/2001,150.0,3.0,4300.0,4000000.0
-1/12/2001,155.0,3.2,4250.0,3950000.0
-1/1/2022,182.5,4.79,4229.93,3938101.73
-1/2/2022,159.62,19.09,3676.58,3416511.46
-1/3/2022,250.58,30.44,3705.75,3499789.04
-1/4/2022,130.96,46.82,3649.61,3407409.76
-1/5/2022,253.36,110.83,3903.23,3718414.75
-1/6/2022,274.09,255.38,3949.64,3852588.08
-1/7/2022,161.53,161.29,4595.48,4323815.97
-1/8/2022,109.67,9.68,4466.94,4119853.33
-1/9/2022,103.46,9.79,3862.21,3600000.0
-1/10/2022,105.0,10.0,3800.0,3550000.0
-1/11/2022,107.0,11.0,3750.0,3500000.0
-1/12/2022,109.0,12.0,3700.0,3450000.0
-"""
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Energy & Emissions Predictor",
+    page_icon="⚡",
+    layout="wide"
+)
 
-# --- Data Loading and Preprocessing ---
-# This function loads the data, cleans it, and aggregates it to annual totals.
+# --- Custom Styling ---
+st.markdown("""
+    <style>
+    .main {
+        background-color: #0e1117;
+    }
+    .metric-card {
+        background-color: #262730;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        border: 1px solid #41424b;
+    }
+    .metric-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #4CAF50;
+    }
+    .metric-label {
+        font-size: 14px;
+        color: #FAFAFA;
+    }
+    h1, h2, h3 {
+        color: #FAFAFA;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- Data Loading ---
 @st.cache_data
-def load_and_preprocess_data():
-    """Loads the embedded CSV data, converts date format, and aggregates monthly data to annual sums."""
+def load_data():
+    # Attempt to load the file - checks for standard name or specific upload name
     try:
-        # Load the data directly from the embedded string using io.StringIO
-        data_io = io.StringIO(EMBEDDED_CSV_DATA)
-        df = pd.read_csv(data_io)
-    except Exception as e:
-        st.error(f"Error loading embedded data: {e}")
-        return None, None, None
+        # Priority: Look for the clean filename
+        df = pd.read_csv("predictor_csv.csv")
+    except FileNotFoundError:
+        try:
+            # Fallback: Look for the original upload name
+            df = pd.read_csv("predictor_csv.xlsx - Sheet1.csv")
+        except:
+            st.error("Data file not found. Please ensure 'predictor_csv.csv' is in the directory.")
+            return None
 
-    # Rename columns for clarity (matching the snippet)
-    df.columns = ['Month/Year', 'Gas_CCGT_GWh', 'Gas_OCGT_GWh', 'Black_Coal_GWh', 'Emissions_tCO2e']
+    # Clean and Parse Dates
+    df['date'] = pd.to_datetime(df['date'])
     
-    # Convert date column and drop rows where conversion failed
-    df['Month/Year'] = pd.to_datetime(df['Month/Year'], format='%m/%d/%Y', errors='coerce')
-    df = df.dropna(subset=['Month/Year'])
-
-    # Extract Year and aggregate monthly data to annual sums
-    df['Year'] = df['Month/Year'].dt.year
-    annual_df = df.groupby('Year').agg({
-        'Gas_CCGT_GWh': 'sum',
-        'Gas_OCGT_GWh': 'sum',
-        'Black_Coal_GWh': 'sum',
-        'Emissions_tCO2e': 'sum'
-    }).reset_index()
-
-    # Prepare data for modeling
-    X = annual_df[['Year']].values
-    y = annual_df[['Gas_CCGT_GWh', 'Gas_OCGT_GWh', 'Black_Coal_GWh', 'Emissions_tCO2e']].copy()
+    # Create a numeric representation of date for Regression (Ordinal)
+    df['date_ordinal'] = df['date'].apply(lambda x: x.toordinal())
     
-    return X, y, annual_df
+    return df
 
-# --- Model Training ---
-def train_models(X, y_df):
-    """Trains a simple Linear Regression model for each target column."""
-    models = {}
-    for column in y_df.columns:
+df = load_data()
+
+if df is not None:
+    # --- Sidebar Controls ---
+    st.sidebar.header("Prediction Controls")
+    
+    # Slider for Year Selection (2025 - 2070)
+    target_year = st.sidebar.slider("Select Target Year", 2025, 2070, 2030)
+    
+    # Option to toggle between User Equations and Dynamic fit for Generation
+    # We use Dynamic for Dates by default because Excel date serials differ from Python ordinals
+    
+    st.sidebar.markdown("---")
+    st.sidebar.info(
+        "**Note on Logic:**\n\n"
+        "1. **Date vs Gen:** Uses Python Linear Regression on historical data (to ensure correct time-axis alignment).\n"
+        "2. **Gen vs Emission:** Uses the specific Excel formulas provided in your prompt."
+    )
+
+    # --- Regression Logic ---
+
+    # 1. Train Models: Date (Independent) -> Generation (Dependent)
+    # We need to train these to get the slope/intercept for the Time axis
+    
+    models_gen = {}
+    
+    # Define the mapping of column names
+    targets = {
+        'Coal': {
+            'gen_col': 'Coal (Black) -  GWh',
+            'em_col': 'Coal (Black) Emissions Vol - tCO₂e',
+            'color': '#ff4b4b' # Red
+        },
+        'Gas CCGT': {
+            'gen_col': 'Gas (CCGT) -  GWh',
+            'em_col': 'Gas (CCGT) Emissions Vol - tCO₂e',
+            'color': '#ffa500' # Orange
+        },
+        'Gas OCGT': {
+            'gen_col': 'Gas (OCGT) -  GWh',
+            'em_col': 'Gas (OCGT) Emissions Vol - tCO₂e',
+            'color': '#00c0f2' # Blue
+        }
+    }
+
+    # Train Generation Models
+    X = df[['date_ordinal']]
+    
+    for key, val in targets.items():
+        y = df[val['gen_col']]
         model = LinearRegression()
-        # Reshape the target variable for sklearn
-        y = y_df[[column]].values
         model.fit(X, y)
-        models[column] = model
-    return models
+        models_gen[key] = model
 
-# --- Prediction Function ---
-def predict_future(models, target_year):
-    """Uses the trained models to make predictions for the specified year."""
-    # The target year must be passed as a 2D array for the model
-    X_pred = np.array([[target_year]])
-    predictions = {}
-    for name, model in models.items():
-        prediction = model.predict(X_pred)[0][0]
-        # Emissions/generation cannot be negative, cap the projection at 0
-        predictions[name] = max(0, prediction)
-    return predictions
+    # --- Prediction Function ---
+    def predict_values(year):
+        # Create a date object for the middle of the requested year
+        target_date = datetime.date(year, 6, 1) 
+        target_ordinal = target_date.toordinal()
+        
+        predictions = {}
+        total_emissions = 0
+        total_gen = 0
+        
+        for key, val in targets.items():
+            # 1. Predict Generation based on Year (Using Python Model)
+            gen_pred = models_gen[key].predict([[target_ordinal]])[0]
+            
+            # 2. Predict Emissions based on Generation (Using USER PROVIDED EQUATIONS)
+            # Coal: y = 958.45x - 185539
+            # CCGT: y = 413.21x + 14159
+            # OCGT: y = 582.73x - 114.71
+            
+            if key == 'Coal':
+                em_pred = (958.45 * gen_pred) - 185539
+            elif key == 'Gas CCGT':
+                em_pred = (413.21 * gen_pred) + 14159
+            elif key == 'Gas OCGT':
+                em_pred = (582.73 * gen_pred) - 114.71
+            
+            # Handle negative predictions (physically impossible) by clamping to 0
+            if gen_pred < 0: gen_pred = 0
+            if em_pred < 0: em_pred = 0
+            
+            predictions[key] = {
+                'gen': gen_pred,
+                'em': em_pred
+            }
+            
+            total_gen += gen_pred
+            total_emissions += em_pred
+            
+        return predictions, total_gen, total_emissions
 
-# --- Streamlit App Setup ---
-def main():
-    st.set_page_config(layout="wide", page_title="Energy & Emissions Projection")
+    # Calculate for current selection
+    preds, tot_gen, tot_em = predict_values(target_year)
 
-    # Call the function without the file_path argument
-    X_train, y_train_df, historical_df = load_and_preprocess_data()
-
-    if X_train is None or historical_df is None:
-        return # Stop execution if data loading failed
-
-    st.title("Future Energy & Emissions Projection Model")
-    st.markdown(
-        """
-        ### Interactive Energy Scenario Projector
-        Use the slider on the left to select a future year. 
-        This tool uses **simple linear regression** on annual historical data to project future trends in energy generation and emissions.
-        """
-    )
+    # --- Dashboard Layout ---
     
-    # --- Sidebar for User Input ---
-    st.sidebar.header("Select Future Year")
-    
-    min_year = int(historical_df['Year'].max()) + 1
-    max_year = 2070
-    
-    # Check if we have enough data to project
-    if min_year > max_year:
-        st.sidebar.warning(f"Historical data already covers up to {min_year-1}. Cannot project further.")
-        return
+    st.title("Energy Forecast Dashboard")
+    st.markdown(f"### Projections for Year: **{target_year}**")
 
-    selected_year = st.sidebar.slider(
-        "Select the year for prediction (up to 2070):",
-        min_value=min_year,
-        max_value=max_year,
-        value=min(2035, max_year), # Default prediction year
-        step=1
-    )
+    # Top Level Metrics
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Predicted Generation</div>
+            <div class="metric-value">{tot_gen:,.2f} GWh</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Predicted Emissions</div>
+            <div class="metric-value">{tot_em:,.2f} tCO₂e</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # --- Train Models and Make Prediction ---
-    models = train_models(X_train, y_train_df)
-    predictions = predict_future(models, selected_year)
+    st.markdown("### Breakdown by Source")
+    
+    # Detailed Columns
+    c1, c2, c3 = st.columns(3)
+    
+    sources = ['Coal', 'Gas CCGT', 'Gas OCGT']
+    cols = [c1, c2, c3]
+    
+    for source, col in zip(sources, cols):
+        with col:
+            st.markdown(f"#### {source}")
+            st.metric("Generation (GWh)", f"{preds[source]['gen']:,.2f}")
+            st.metric("Emissions (tCO₂e)", f"{preds[source]['em']:,.2f}")
 
-    # --- Display Results ---
-    st.header(f"Projected Outcomes for Year {selected_year}")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    # Helper function to format large numbers
-    def format_metric(value):
-        # Format millions with one decimal place, or standard thousands
-        if value >= 1_000_000:
-            return f"{value / 1_000_000:,.1f} M"
-        elif value >= 1_000:
-            return f"{value:,.0f}"
-        return f"{value:,.0f}"
+    st.divider()
 
-    # Emissions (tCO2e)
-    col1.metric(
-        label="Emissions (tCO2e)", 
-        value=format_metric(predictions['Emissions_tCO2e']), 
-        help="Projected total annual CO2 equivalent emissions."
-    )
-    
-    # Black Coal (GWh)
-    col2.metric(
-        label="Black Coal Generation (GWh)", 
-        value=format_metric(predictions['Black_Coal_GWh']), 
-        help="Projected total annual generation from Black Coal."
-    )
-    
-    # Gas CCGT (GWh)
-    col3.metric(
-        label="Gas CCGT Generation (GWh)", 
-        value=format_metric(predictions['Gas_CCGT_GWh']),
-        help="Projected total annual generation from Gas Combined Cycle Gas Turbines."
-    )
+    # --- Tabs for Analysis ---
+    tab1, tab2, tab3 = st.tabs(["📉 Generation Trends", "☁️ Emission Trends", "📊 Linear Regression Validation"])
 
-    # Gas OCGT (GWh)
-    col4.metric(
-        label="Gas OCGT Generation (GWh)", 
-        value=format_metric(predictions['Gas_OCGT_GWh']),
-        help="Projected total annual generation from Gas Open Cycle Gas Turbines."
-    )
+    # Prepare Future Data for plotting (Line from last data point to 2070)
+    last_date = df['date'].max()
+    future_years = list(range(last_date.year, 2071))
+    future_dates = [datetime.date(y, 1, 1) for y in future_years]
+    future_ordinals = np.array([d.toordinal() for d in future_dates]).reshape(-1, 1)
 
-    st.markdown("---")
-    
-    # --- Visualization of Trends ---
-    st.header("Historical Data and Projected Trend")
+    with tab1:
+        st.subheader("Generation Forecast (GWh)")
+        fig_gen = go.Figure()
 
-    # Get the last year in the historical data
-    last_historical_year = historical_df['Year'].max()
-    
-    # Generate predicted data for all years up to the selected year for a smooth trend line
-    projection_years = np.arange(last_historical_year + 1, selected_year + 1).reshape(-1, 1)
-    
-    projection_data = {'Year': projection_years.flatten()}
-    
-    for name, model in models.items():
-        # Predict values for the intermediate years
-        projected_values = model.predict(projection_years).flatten()
-        # Cap at 0
-        projected_values = np.maximum(0, projected_values)
-        projection_data[name] = projected_values
+        for key, val in targets.items():
+            # Historical Dots
+            fig_gen.add_trace(go.Scatter(
+                x=df['date'], 
+                y=df[val['gen_col']], 
+                mode='markers',
+                name=f"{key} (Hist)",
+                marker=dict(color=val['color'], opacity=0.5, size=3)
+            ))
+            
+            # Trend Line (Historical + Future)
+            # Create full range ordinals for smooth line
+            full_dates_ord = np.concatenate([df['date_ordinal'].values.reshape(-1,1), future_ordinals])
+            full_dates_dt = [datetime.date.fromordinal(int(d)) for d in full_dates_ord.flatten()]
+            trend_y = models_gen[key].predict(full_dates_ord)
+            
+            fig_gen.add_trace(go.Scatter(
+                x=full_dates_dt,
+                y=trend_y,
+                mode='lines',
+                name=f"{key} (Trend)",
+                line=dict(color=val['color'], width=2, dash='dash')
+            ))
 
-    projection_df = pd.DataFrame(projection_data)
+        fig_gen.update_layout(
+            xaxis_title="Year",
+            yaxis_title="Generation (GWh)",
+            template="plotly_dark",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_gen, use_container_width=True)
 
-    # Combine historical data with the smoothed projection
-    combined_df = pd.concat([historical_df, projection_df]).drop_duplicates(subset=['Year']).sort_values('Year')
-    
-    # Melt the dataframe for better visualization in Streamlit
-    melted_df = combined_df.set_index('Year').stack().reset_index()
-    melted_df.columns = ['Year', 'Metric', 'Value']
+    with tab2:
+        st.subheader("Emissions Forecast (tCO₂e)")
+        fig_em = go.Figure()
 
-    # --- Chart 1: Generation Metrics ---
-    generation_metrics = ['Gas_CCGT_GWh', 'Gas_OCGT_GWh', 'Black_Coal_GWh']
-    generation_df = melted_df[melted_df['Metric'].isin(generation_metrics)]
-    
-    st.subheader("Electricity Generation Projections (GWh)")
-    st.line_chart(
-        generation_df,
-        x='Year',
-        y='Value',
-        color='Metric',
-        use_container_width=True
-    )
-    
-    # --- Chart 2: Emissions Metric ---
-    emissions_metric = ['Emissions_tCO2e']
-    emissions_df = melted_df[melted_df['Metric'].isin(emissions_metric)]
+        for key, val in targets.items():
+            # Historical Dots
+            fig_em.add_trace(go.Scatter(
+                x=df['date'], 
+                y=df[val['em_col']], 
+                mode='markers',
+                name=f"{key} (Hist)",
+                marker=dict(color=val['color'], opacity=0.5, size=3)
+            ))
+            
+            # Trend Line
+            # We calculate this by taking the Gen Trend -> Applying User Formulas
+            full_dates_ord = np.concatenate([df['date_ordinal'].values.reshape(-1,1), future_ordinals])
+            full_dates_dt = [datetime.date.fromordinal(int(d)) for d in full_dates_ord.flatten()]
+            gen_trend = models_gen[key].predict(full_dates_ord)
+            
+            # Apply User Formulas
+            if key == 'Coal':
+                em_trend = (958.45 * gen_trend) - 185539
+            elif key == 'Gas CCGT':
+                em_trend = (413.21 * gen_trend) + 14159
+            elif key == 'Gas OCGT':
+                em_trend = (582.73 * gen_trend) - 114.71
+                
+            fig_em.add_trace(go.Scatter(
+                x=full_dates_dt,
+                y=em_trend,
+                mode='lines',
+                name=f"{key} (Trend)",
+                line=dict(color=val['color'], width=2, dash='dash')
+            ))
 
-    st.subheader("Emissions Projection (tCO2e)")
-    st.line_chart(
-        emissions_df,
-        x='Year',
-        y='Value',
-        color='Metric',
-        use_container_width=True
-    )
-    
-    st.caption(
-        "**Important Disclaimer:** This tool uses simple linear regression, which assumes past trends "
-        "will continue linearly into the future. It does not account for policy changes (e.g., carbon taxes, phase-outs), "
-        "technological disruptions, or non-linear effects. These results are for **illustrative purposes only**."
-    )
+        fig_em.update_layout(
+            xaxis_title="Year",
+            yaxis_title="Emissions (tCO₂e)",
+            template="plotly_dark",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_em, use_container_width=True)
 
-# Run the app
-if __name__ == '__main__':
-    main()
+    with tab3:
+        st.subheader("Generation vs Emissions Relationship")
+        st.caption("Visualizing the linear relationship equations you provided.")
+        
+        # Dropdown to select source for scatter plot
+        selected_source = st.selectbox("Select Energy Source", list(targets.keys()))
+        val = targets[selected_source]
+        
+        fig_scatter = px.scatter(
+            df, 
+            x=val['gen_col'], 
+            y=val['em_col'], 
+            trendline="ols", # This calculates OLS dynamically, useful to compare with user equations
+            trendline_color_override="white",
+            title=f"{selected_source}: Generation vs Emissions"
+        )
+        
+        fig_scatter.update_layout(template="plotly_dark")
+        st.plotly_chart(fig_scatter, use_container_width=True)
+        
+        # Display the equation used
+        st.markdown("#### Equation Used for Calculation:")
+        if selected_source == 'Coal':
+            st.latex(r"y = 958.45x - 185539")
+        elif selected_source == 'Gas CCGT':
+            st.latex(r"y = 413.21x + 14159")
+        elif selected_source == 'Gas OCGT':
+            st.latex(r"y = 582.73x - 114.71")
+        st.caption("Where x = Generation (GWh) and y = Emissions (tCO₂e)")
