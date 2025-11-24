@@ -71,21 +71,11 @@ def process_dataframe(df):
 
 # --- Main Initialization ---
 
-st.sidebar.header("Data Source")
-uploaded_file = st.sidebar.file_uploader("Upload CSV File (Optional)", type=['csv'])
-
-raw_df = None
-if uploaded_file is not None:
-    try:
-        raw_df = pd.read_csv(uploaded_file)
-    except Exception as e:
-        st.error(f"Error reading uploaded file: {e}")
-else:
-    raw_df = load_local_data()
+# Auto-load data directly (Uploader removed as requested)
+raw_df = load_local_data()
 
 if raw_df is None:
-    st.warning("⚠️ Data file not found automatically.")
-    st.info("Please drag and drop your **predictor_csv.csv** file into the sidebar uploader to continue.")
+    st.error("⚠️ Data file not found automatically. Please ensure 'predictor_csv.csv' is in the directory.")
     st.stop()
 
 df = process_dataframe(raw_df)
@@ -107,17 +97,17 @@ if df is not None:
         'Coal': {
             'gen_col': 'Coal (Black) -  GWh',
             'em_col': 'Coal (Black) Emissions Vol - tCO₂e',
-            'color': '#ff4b4b'
+            'color': '#000080' # Navy Blue
         },
-        'Gas CCGT': {
+        'Combined Cycle Gas Turbine': {
             'gen_col': 'Gas (CCGT) -  GWh',
             'em_col': 'Gas (CCGT) Emissions Vol - tCO₂e',
-            'color': '#ffa500'
+            'color': '#008000' # Green
         },
-        'Gas OCGT': {
+        'Open Cycle Gas Turbine': {
             'gen_col': 'Gas (OCGT) -  GWh',
             'em_col': 'Gas (OCGT) Emissions Vol - tCO₂e',
-            'color': '#00c0f2'
+            'color': '#800080' # Purple
         }
     }
 
@@ -150,9 +140,9 @@ if df is not None:
             # User Provided Equations
             if key == 'Coal':
                 em_pred = (958.45 * gen_pred) - 185539
-            elif key == 'Gas CCGT':
+            elif key == 'Combined Cycle Gas Turbine':
                 em_pred = (413.21 * gen_pred) + 14159
-            elif key == 'Gas OCGT':
+            elif key == 'Open Cycle Gas Turbine':
                 em_pred = (582.73 * gen_pred) - 114.71
             
             if gen_pred < 0: gen_pred = 0
@@ -171,7 +161,7 @@ if df is not None:
     preds, tot_gen, tot_em = predict_values(target_year)
 
     # --- Dashboard Layout ---
-    st.title("Energy Forecast Dashboard")
+    st.title("NSW Energy and Emissions Forecast Dashboard")
     st.markdown(f"### Projections for Year: **{target_year}**")
 
     col1, col2 = st.columns(2)
@@ -193,7 +183,7 @@ if df is not None:
     st.markdown("### Breakdown by Source")
     
     c1, c2, c3 = st.columns(3)
-    sources = ['Coal', 'Gas CCGT', 'Gas OCGT']
+    sources = ['Coal', 'Combined Cycle Gas Turbine', 'Open Cycle Gas Turbine']
     cols = [c1, c2, c3]
     
     for source, col in zip(sources, cols):
@@ -217,6 +207,7 @@ if df is not None:
         fig_gen = go.Figure()
 
         for key, val in targets.items():
+            # Historical Dots
             fig_gen.add_trace(go.Scatter(
                 x=df['date'], 
                 y=df[val['gen_col']], 
@@ -225,6 +216,7 @@ if df is not None:
                 marker=dict(color=val['color'], opacity=0.5, size=3)
             ))
             
+            # Trend Line (Historical + Future)
             full_dates_ord = np.concatenate([df['date_ordinal'].values.reshape(-1,1), future_ordinals])
             full_dates_dt = [datetime.date.fromordinal(int(d)) for d in full_dates_ord.flatten()]
             trend_y = models_gen[key].predict(full_dates_ord)
@@ -250,6 +242,7 @@ if df is not None:
         fig_em = go.Figure()
 
         for key, val in targets.items():
+            # Historical Dots
             fig_em.add_trace(go.Scatter(
                 x=df['date'], 
                 y=df[val['em_col']], 
@@ -258,15 +251,17 @@ if df is not None:
                 marker=dict(color=val['color'], opacity=0.5, size=3)
             ))
             
+            # Trend Line
             full_dates_ord = np.concatenate([df['date_ordinal'].values.reshape(-1,1), future_ordinals])
             full_dates_dt = [datetime.date.fromordinal(int(d)) for d in full_dates_ord.flatten()]
             gen_trend = models_gen[key].predict(full_dates_ord)
             
+            # Apply User Formulas
             if key == 'Coal':
                 em_trend = (958.45 * gen_trend) - 185539
-            elif key == 'Gas CCGT':
+            elif key == 'Combined Cycle Gas Turbine':
                 em_trend = (413.21 * gen_trend) + 14159
-            elif key == 'Gas OCGT':
+            elif key == 'Open Cycle Gas Turbine':
                 em_trend = (582.73 * gen_trend) - 114.71
                 
             fig_em.add_trace(go.Scatter(
@@ -308,10 +303,10 @@ if df is not None:
         if selected_source == 'Coal':
             y_trend = 958.45 * x_range - 185539
             equation_str = "y = 958.45x - 185539"
-        elif selected_source == 'Gas CCGT':
+        elif selected_source == 'Combined Cycle Gas Turbine':
             y_trend = 413.21 * x_range + 14159
             equation_str = "y = 413.21x + 14159"
-        elif selected_source == 'Gas OCGT':
+        elif selected_source == 'Open Cycle Gas Turbine':
             y_trend = 582.73 * x_range - 114.71
             equation_str = "y = 582.73x - 114.71"
             
@@ -320,7 +315,7 @@ if df is not None:
             y=y_trend,
             mode='lines',
             name=f'Eq: {equation_str}',
-            line=dict(color='red', width=2)
+            line=dict(color=val['color'], width=2)
         ))
         
         fig_scatter.update_layout(template="plotly_dark")
