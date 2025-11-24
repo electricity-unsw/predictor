@@ -169,14 +169,14 @@ if df is not None:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-label">Total Predicted Generation</div>
-            <div class="metric-value">{tot_gen:,.2f} GWh</div>
+            <div class="metric-value">{tot_gen:,.4g} GWh</div>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-label">Total Predicted Emissions</div>
-            <div class="metric-value">{tot_em:,.2f} tCO₂e</div>
+            <div class="metric-value">{tot_em:,.4g} tCO₂e</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -189,8 +189,8 @@ if df is not None:
     for source, col in zip(sources, cols):
         with col:
             st.markdown(f"#### {source}")
-            st.metric("Generation (GWh)", f"{preds[source]['gen']:,.2f}")
-            st.metric("Emissions (tCO₂e)", f"{preds[source]['em']:,.2f}")
+            st.metric("Generation (GWh)", f"{preds[source]['gen']:,.4g}")
+            st.metric("Emissions (tCO₂e)", f"{preds[source]['em']:,.4g}")
 
     st.divider()
 
@@ -213,7 +213,8 @@ if df is not None:
                 y=df[val['gen_col']], 
                 mode='markers',
                 name=f"{key} (Hist)",
-                marker=dict(color=val['color'], opacity=0.5, size=3)
+                marker=dict(color=val['color'], opacity=0.5, size=3),
+                hovertemplate=f"<b>{key} (Hist)</b><br>Date: %{{x|%Y-%m-%d}}<br>Gen: %{{y:.4r}} GWh<extra></extra>"
             ))
             
             # Trend Line (Historical + Future)
@@ -226,15 +227,19 @@ if df is not None:
                 y=trend_y,
                 mode='lines',
                 name=f"{key} (Trend)",
-                line=dict(color=val['color'], width=2, dash='dash')
+                line=dict(color=val['color'], width=2, dash='dash'),
+                hovertemplate=f"<b>{key} (Trend)</b><br>Year: %{{x|%Y}}<br>Gen: %{{y:.4r}} GWh<extra></extra>"
             ))
 
         fig_gen.update_layout(
             xaxis_title="Year",
             yaxis_title="Generation (GWh)",
             template="plotly_dark",
-            hovermode="x unified"
+            hovermode="x unified",
+            hoverlabel=dict(namelength=-1), # Ensures full name visibility
+            margin=dict(l=60, r=40, t=40, b=60) # Adjust margins
         )
+        fig_gen.update_xaxes(automargin=True)
         st.plotly_chart(fig_gen, use_container_width=True)
 
     with tab2:
@@ -248,7 +253,8 @@ if df is not None:
                 y=df[val['em_col']], 
                 mode='markers',
                 name=f"{key} (Hist)",
-                marker=dict(color=val['color'], opacity=0.5, size=3)
+                marker=dict(color=val['color'], opacity=0.5, size=3),
+                hovertemplate=f"<b>{key} (Hist)</b><br>Date: %{{x|%Y-%m-%d}}<br>Emissions: %{{y:.4r}} tCO₂e<extra></extra>"
             ))
             
             # Trend Line
@@ -269,15 +275,19 @@ if df is not None:
                 y=em_trend,
                 mode='lines',
                 name=f"{key} (Trend)",
-                line=dict(color=val['color'], width=2, dash='dash')
+                line=dict(color=val['color'], width=2, dash='dash'),
+                hovertemplate=f"<b>{key} (Trend)</b><br>Year: %{{x|%Y}}<br>Emissions: %{{y:.4r}} tCO₂e<extra></extra>"
             ))
 
         fig_em.update_layout(
             xaxis_title="Year",
             yaxis_title="Emissions (tCO₂e)",
             template="plotly_dark",
-            hovermode="x unified"
+            hovermode="x unified",
+            hoverlabel=dict(namelength=-1), # Ensures full name visibility
+            margin=dict(l=60, r=40, t=40, b=60)
         )
+        fig_em.update_xaxes(automargin=True)
         st.plotly_chart(fig_em, use_container_width=True)
 
     with tab3:
@@ -315,10 +325,20 @@ if df is not None:
             y=y_trend,
             mode='lines',
             name=f'Eq: {equation_str}',
-            line=dict(color=val['color'], width=2)
+            line=dict(color=val['color'], width=2),
+            hovertemplate="<b>Trend</b><br>Gen: %{x:.4r}<br>Emissions: %{y:.4r}<extra></extra>"
         ))
         
-        fig_scatter.update_layout(template="plotly_dark")
+        # Update markers in the scatter to use 4 sig figs
+        fig_scatter.update_traces(
+            selector=dict(mode='markers'),
+            hovertemplate="<b>Data</b><br>Gen: %{x:.4r}<br>Emissions: %{y:.4r}<extra></extra>"
+        )
+        
+        fig_scatter.update_layout(
+            template="plotly_dark",
+            hoverlabel=dict(namelength=-1)
+        )
         st.plotly_chart(fig_scatter, use_container_width=True)
         
         st.markdown("#### Equation Used:")
